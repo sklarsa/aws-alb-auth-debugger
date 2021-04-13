@@ -4,11 +4,11 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"strings"
-	"text/template"
 
 	"github.com/dgrijalva/jwt-go"
 )
@@ -34,13 +34,18 @@ func getJwtPubKey(encodedJwt string) ([]byte, error) {
 	json.Unmarshal(decodedHeaders, &headers)
 
 	kid := headers["kid"]
-
-	resp, err := http.Get(fmt.Sprintf("https://public-keys.auth.elb.%s.amazonaws.com/%s", AWS_REGION, kid))
+	url := fmt.Sprintf("https://public-keys.auth.elb.%s.amazonaws.com/%s", AWS_REGION, kid)
+	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
 	}
 
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("GET: %s -- %s", url, resp.Status)
+	}
+
 	content, err := ioutil.ReadAll(resp.Body)
+	println(string(content))
 	if err != nil {
 		return nil, err
 
@@ -94,9 +99,12 @@ func jwtInfo(w http.ResponseWriter, req *http.Request) {
 	}
 
 	jwtinfoTemplate.Execute(w, map[string]interface{}{
-		"claims":      claims,
-		"idToken":     idToken,
-		"accessToken": accessToken,
+		"claimsValue":       claims,
+		"claimsHeader":      USER_CLAIMS_HEADER,
+		"idTokenValue":      idToken,
+		"idTokenHeader":     IDENTITY_TOKEN_HEADER,
+		"accessTokenValue":  accessToken,
+		"accessTokenHeader": ACCESS_TOKEN_HEADER,
 	})
 
 }
