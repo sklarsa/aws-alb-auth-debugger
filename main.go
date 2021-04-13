@@ -3,6 +3,7 @@ package main
 import (
 	_ "embed"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"html/template"
 	"io/ioutil"
@@ -16,8 +17,8 @@ import (
 const ACCESS_TOKEN_HEADER = "x-amzn-oidc-accesstoken"
 const IDENTITY_TOKEN_HEADER = "x-amzn-oidc-identity"
 const USER_CLAIMS_HEADER = "x-amzn-oidc-data"
-const PORT = 8080
-const AWS_REGION = "us-east-1"
+
+var AWS_REGION string
 
 //go: embed jwtinfo.html
 var jwtinfoFmtStr string
@@ -114,6 +115,11 @@ func healthcheck(w http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
+	port := flag.Int("p", 8080, "TCP port to run the server on")
+	flag.StringVar(&AWS_REGION, "r", "us-east-1", "AWS Region your load balancer is running in")
+
+	flag.Parse()
+
 	http.HandleFunc("/", jwtInfo)
 	http.HandleFunc("/health", healthcheck)
 
@@ -122,6 +128,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Print("Starting server...")
+	err = http.ListenAndServe(fmt.Sprintf(":%d", *port), nil)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	http.ListenAndServe(fmt.Sprintf(":%d", PORT), nil)
 }
