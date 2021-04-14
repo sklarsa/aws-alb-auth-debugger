@@ -15,12 +15,25 @@
             <td>{{.idTokenHeader}}</td>
             <td>{{.idTokenValue}}</td>
         </tr>
-        <tr>
-            <td>{{.accessTokenHeader}}</td>
-            <td>{{.accessTokenValue}}</td>
-        </tr>
     </tbody>
 </table>
+
+
+<h3>Access Token Claims</h3>
+<table>
+    <thead>
+        <tr>
+            <th>Key</th>
+            <th>Value</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{ range $key, $value := .accessTokenValue }}
+            <tr><td>{{ $key }}</td><td>{{prettyPrint $value }}</td></tr>
+        {{ end }}
+    </tbody>
+</table>
+
 
 <h3>AWS ALB JWT Claims</h3>
 <table>
@@ -32,7 +45,7 @@
     </thead>
     <tbody>
         {{ range $key, $value := .claimsValue }}
-            <tr><td>{{ $key }}</td><td>{{ $value }}</td></tr>
+            <tr><td>{{ $key }}</td><td>{{prettyPrint $value }}</td></tr>
         {{ end }}
     </tbody>
 </table>

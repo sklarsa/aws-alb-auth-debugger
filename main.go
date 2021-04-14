@@ -70,7 +70,7 @@ func getJwtPubKey(encodedJwt string) (*ecdsa.PublicKey, error) {
 	return pub.(*ecdsa.PublicKey), nil
 }
 
-func decodeJwt(encodedJwt string) (jwt.MapClaims, error) {
+func decodeClaimsJwt(encodedJwt string) (jwt.MapClaims, error) {
 	pubKey, err := getJwtPubKey(encodedJwt)
 	if err != nil {
 		return nil, err
@@ -97,6 +97,22 @@ func decodeJwt(encodedJwt string) (jwt.MapClaims, error) {
 
 }
 
+func decodeAccessTokenJwt(encodedJwt string) (map[string]interface{}, error) {
+	data, err := jwt.DecodeSegment(strings.Split(encodedJwt, ".")[1])
+	if err != nil {
+		return nil, err
+	}
+
+	var claims map[string]interface{}
+	err = json.Unmarshal(data, &claims)
+	if err != nil {
+		return nil, err
+	}
+
+	return claims, nil
+
+}
+
 func jwtInfo(w http.ResponseWriter, req *http.Request) {
 	userClaimsJwt := req.Header.Get(USER_CLAIMS_HEADER)
 	idToken := req.Header.Get(IDENTITY_TOKEN_HEADER)
@@ -108,7 +124,15 @@ func jwtInfo(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	claims, err := decodeJwt(userClaimsJwt)
+	claims, err := decodeClaimsJwt(userClaimsJwt)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(fmt.Sprint(err)))
+		return
+	}
+
+	// Not validating access token for now
+	accessTokenClaims, err := decodeAccessTokenJwt(accessTokenJwt)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(fmt.Sprint(err)))
@@ -120,7 +144,7 @@ func jwtInfo(w http.ResponseWriter, req *http.Request) {
 		"claimsHeader":      USER_CLAIMS_HEADER,
 		"idTokenValue":      idToken,
 		"idTokenHeader":     IDENTITY_TOKEN_HEADER,
-		"accessTokenValue":  accessTokenJwt,
+		"accessTokenValue":  accessTokenClaims,
 		"accessTokenHeader": ACCESS_TOKEN_HEADER,
 	})
 
@@ -145,7 +169,16 @@ func main() {
 	http.HandleFunc("/health", healthcheck)
 
 	var err error
-	jwtinfoTemplate, err = template.New("jwtinfo").Parse(jwtinfoFmtStr)
+	jwtinfoTemplate, err = template.New("jwtinfo").Funcs(template.FuncMap{
+		"prettyPrint": func(v interface{}) string {
+			f, ok := v.(float64)
+			if ok {
+				return fmt.Sprintf("%f", f)
+			}
+
+			return fmt.Sprintf("%v", v)
+		},
+	}).Parse(jwtinfoFmtStr)
 	if err != nil {
 		log.Fatal(err)
 	}
