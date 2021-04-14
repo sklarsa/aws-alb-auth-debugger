@@ -1,8 +1,11 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/x509"
 	_ "embed"
 	"encoding/json"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	"html/template"
@@ -14,17 +17,20 @@ import (
 	"github.com/dgrijalva/jwt-go"
 )
 
-const ACCESS_TOKEN_HEADER = "x-amzn-oidc-accesstoken"
-const IDENTITY_TOKEN_HEADER = "x-amzn-oidc-identity"
-const USER_CLAIMS_HEADER = "x-amzn-oidc-data"
+const (
+	ACCESS_TOKEN_HEADER   = "x-amzn-oidc-accesstoken"
+	IDENTITY_TOKEN_HEADER = "x-amzn-oidc-identity"
+	USER_CLAIMS_HEADER    = "x-amzn-oidc-data"
+)
 
-var AWS_REGION string
+var (
+	AWS_REGION string
+	//go:embed jwtinfo.html
+	jwtinfoFmtStr   string
+	jwtinfoTemplate *template.Template
+)
 
-//go: embed jwtinfo.html
-var jwtinfoFmtStr string
-var jwtinfoTemplate *template.Template
-
-func getJwtPubKey(encodedJwt string) ([]byte, error) {
+func getJwtPubKey(encodedJwt string) (*ecdsa.PublicKey, error) {
 	encodedHeaders := strings.Split(encodedJwt, ".")[0]
 	decodedHeaders, err := jwt.DecodeSegment(encodedHeaders)
 	if err != nil {
@@ -46,12 +52,22 @@ func getJwtPubKey(encodedJwt string) ([]byte, error) {
 	}
 
 	content, err := ioutil.ReadAll(resp.Body)
-	println(string(content))
+
 	if err != nil {
 		return nil, err
-
 	}
-	return content, nil
+
+	block, _ := pem.Decode(content)
+	if block == nil {
+		return nil, fmt.Errorf("failed to parse PEM block containing the public key")
+	}
+
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		panic("failed to parse DER encoded public key: " + err.Error())
+	}
+
+	return pub.(*ecdsa.PublicKey), nil
 }
 
 func decodeJwt(encodedJwt string) (jwt.MapClaims, error) {
@@ -84,9 +100,9 @@ func decodeJwt(encodedJwt string) (jwt.MapClaims, error) {
 func jwtInfo(w http.ResponseWriter, req *http.Request) {
 	userClaimsJwt := req.Header.Get(USER_CLAIMS_HEADER)
 	idToken := req.Header.Get(IDENTITY_TOKEN_HEADER)
-	accessToken := req.Header.Get(ACCESS_TOKEN_HEADER)
+	accessTokenJwt := req.Header.Get(ACCESS_TOKEN_HEADER)
 
-	if userClaimsJwt == "" || idToken == "" || accessToken == "" {
+	if userClaimsJwt == "" || idToken == "" || accessTokenJwt == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Required headers not found.  Are you running behind a load balancer?"))
 		return
@@ -99,14 +115,19 @@ func jwtInfo(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	jwtinfoTemplate.Execute(w, map[string]interface{}{
+	err = jwtinfoTemplate.Execute(w, map[string]interface{}{
 		"claimsValue":       claims,
 		"claimsHeader":      USER_CLAIMS_HEADER,
 		"idTokenValue":      idToken,
 		"idTokenHeader":     IDENTITY_TOKEN_HEADER,
-		"accessTokenValue":  accessToken,
+		"accessTokenValue":  accessTokenJwt,
 		"accessTokenHeader": ACCESS_TOKEN_HEADER,
 	})
+
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(fmt.Sprint(err)))
+	}
 
 }
 
